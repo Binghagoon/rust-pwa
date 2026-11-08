@@ -2,7 +2,12 @@ FROM rust:1.88-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache build-base pkgconfig openssl-dev curl-dev
+RUN apk add --no-cache build-base pkgconf perl openssl-dev curl-dev
+
+ENV OPENSSL_DIR=/usr \
+	OPENSSL_LIB_DIR=/usr/lib \
+	OPENSSL_INCLUDE_DIR=/usr/include \
+	PKG_CONFIG_PATH=/usr/lib/pkgconfig
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
