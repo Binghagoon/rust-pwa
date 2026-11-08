@@ -10,7 +10,7 @@ env:
   IMAGE_TAG: latest
   DEPLOY_PATH: /home/github-deploy/rust-pwa
   CONTAINER_NAME: rust-pwa
-  HOST_PORT: 42176
+  HOST_PORT: 42177
 
 jobs:
   build-and-deploy:
@@ -71,6 +71,7 @@ jobs:
             "set -e; \
              gunzip -c '${{ env.DEPLOY_PATH }}/releases/rust-pwa-${{ env.IMAGE_TAG }}.tar.gz' | docker load; \
              docker rm -f '${{ env.CONTAINER_NAME }}' 2>/dev/null || true; \
+             docker ps -q --filter 'publish=${{ env.HOST_PORT }}' | xargs -r docker rm -f; \
              docker run -d --name '${{ env.CONTAINER_NAME }}' --restart unless-stopped \
                -e VAPID_PUBLIC_KEY='${{ secrets.VAPID_PUBLIC_KEY }}' \
                -e VAPID_PRIVATE_KEY='${{ secrets.VAPID_PRIVATE_KEY }}' \
