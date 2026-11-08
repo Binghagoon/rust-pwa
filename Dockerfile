@@ -1,10 +1,8 @@
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.88-alpine AS builder
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends pkg-config libssl-dev libcurl4-openssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache build-base pkgconfig openssl-dev curl-dev
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
@@ -12,11 +10,9 @@ COPY static ./static
 
 RUN cargo build --release --locked
 
-FROM debian:bookworm-slim
+FROM alpine:3.22
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libssl3 libcurl4 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates libcurl openssl
 
 WORKDIR /app
 COPY --from=builder --chown=65534:65534 /app/target/release/rust-pwa /app/rust-pwa
