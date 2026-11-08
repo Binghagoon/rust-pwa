@@ -41,12 +41,13 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=rust-pwa
-          cache-to: type=gha,mode=max,scope=rust-pwa
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}
 
-      - name: Export Docker image
+      - name: Export and Compress Docker image
         shell: bash
-        run: docker save '${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}' | gzip > rust-pwa.tar.gz
+        # gzip -1을 사용하여 압축 속도를 높여 CPU 병목을 줄입니다.
+        run: docker save '${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}' | gzip -1 > rust-pwa.tar.gz
 
       - name: Configure SSH
         shell: bash
