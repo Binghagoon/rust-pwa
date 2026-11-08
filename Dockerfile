@@ -13,13 +13,12 @@ RUN mkdir src \
 	&& rustc --version \
 	&& cargo --version \
 	&& cargo build --release --locked \
-	&& rm -rf src
+	&& rm -rf src target/release/rust-pwa target/release/deps/rust_pwa-* target/release/.fingerprint/rust-pwa-*
 
 COPY src ./src
 COPY static ./static
 
-RUN cargo clean -p rust-pwa \
-	&& cargo build --release --locked \
+RUN cargo build --release --locked --bin rust-pwa \
 	&& test -s target/release/rust-pwa
 
 FROM alpine:3.22
