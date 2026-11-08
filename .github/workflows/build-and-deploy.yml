@@ -16,6 +16,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
 
     steps:
@@ -35,6 +36,8 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=rust-pwa
+          cache-to: type=gha,mode=max,scope=rust-pwa
 
       - name: Export Docker image
         shell: bash
