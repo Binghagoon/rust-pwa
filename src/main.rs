@@ -22,6 +22,12 @@ struct SubscriptionKeys {
     auth: String,
 }
 
+#[derive(Deserialize)]
+struct NotificationRequest {
+    subscribers: Vec<ClientSubscription>,
+    message: String,
+}
+
 // 서버 상태 (구독 정보를 메모리에 저장)
 struct AppState {
     subscriptions: Mutex<Vec<ClientSubscription>>,
@@ -49,6 +55,8 @@ async fn main() {
         .route("/api/subscribe", post(subscribe_handler))
         .route("/api/vapid-public-key", get(vapid_public_key_handler))
         .route("/api/send-notification", get(send_notification_handler))
+        .route("/notifications", post(notifications_handler))
+        .route("/subscribers", get(subscribers_handler))
         .layer(
             TraceLayer::new_for_http()
                 .on_request(|request: &axum::http::Request<_>, _span: &tracing::Span| {
@@ -82,6 +90,13 @@ async fn vapid_public_key_handler() -> String {
     std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default()
 }
 
+async fn subscribers_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<ClientSubscription>> {
+    let subscribers = state.subscriptions.lock().unwrap().clone();
+    Json(subscribers)
+}
+
 // 1. 클라이언트 구독 정보 저장 엔드포인트
 async fn subscribe_handler(
     State(state): State<Arc<AppState>>,
@@ -99,10 +114,30 @@ async fn subscribe_handler(
 
 // 2. 저장된 구독자들에게 푸시 알림을 발송하는 엔드포인트
 async fn send_notification_handler(State(state): State<Arc<AppState>>) -> &'static str {
-    println!("\n[📤 NOTIFY] 알림 전송 요청이 들어왔습니다.");
+    let subs = state.subscriptions.lock().unwrap().clone();
+    send_notifications(subs, "서버에서 보낸 실시간 푸시 알림입니다! 🔥").await
+}
+
+async fn notifications_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<NotificationRequest>,
+) -> &'static str {
+    println!("\n[📤 NOTIFY] POST /notifications 요청이 들어왔습니다.");
+
+    let subscribers = if request.subscribers.is_empty() {
+        state.subscriptions.lock().unwrap().clone()
+    } else {
+        request.subscribers
+    };
+
+    send_notifications(subscribers, &request.message).await
+}
+
+async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'static str {
+    println!("\n[📤 NOTIFY] 알림 전송을 시작합니다.");
 
     // 환경 변수에서 VAPID 키 로드
-    let public_key = match std::env::var("VAPID_PUBLIC_KEY") {
+    let _public_key = match std::env::var("VAPID_PUBLIC_KEY") {
         Ok(key) => key,
         Err(_) => {
             eprintln!("[❌ ERROR] VAPID_PUBLIC_KEY 환경 변수가 설정되지 않았습니다!");
@@ -121,7 +156,6 @@ async fn send_notification_handler(State(state): State<Arc<AppState>>) -> &'stat
         "mailto:admin@example.com".to_string()
     });
 
-    let subs = state.subscriptions.lock().unwrap().clone();
     if subs.is_empty() {
         println!("[ℹ️ INFO] 현재 등록된 구독자가 없습니다. 브라우저에서 먼저 '구독하기'를 눌러주세요.");
         return "No subscribers found";
@@ -173,7 +207,7 @@ async fn send_notification_handler(State(state): State<Arc<AppState>>) -> &'stat
         // 보낼 알림 내용 (JSON 페이로드)
         let payload = serde_json::json!({
             "title": "Rust 서버 알림",
-            "body": "서버에서 보낸 실시간 푸시 알림입니다! 🔥"
+            "body": message
         }).to_string();
 
         builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());

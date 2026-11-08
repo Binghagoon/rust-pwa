@@ -1,0 +1,71 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: rust-pwa
+  IMAGE_TAG: latest
+  DEPLOY_PATH: /home/github-deploy/rust-pwa
+  CONTAINER_NAME: rust-pwa
+  HOST_PORT: 42176
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      - name: Export Docker image
+        shell: bash
+        run: docker save '${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}' | gzip > rust-pwa.tar.gz
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' '${{ secrets.DEPLOY_SSH_KEY }}' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H '${{ secrets.DEPLOY_HOST }}' >> ~/.ssh/known_hosts
+
+      - name: Prepare server files
+        shell: bash
+        run: |
+          ssh '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}' \
+            "mkdir -p '${{ env.DEPLOY_PATH }}/releases'"
+          scp rust-pwa.tar.gz \
+            '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/releases/rust-pwa-${{ env.IMAGE_TAG }}.tar.gz'
+
+      - name: Load image and restart application
+        shell: bash
+        run: |
+          ssh '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}' \
+            "set -e; \
+             gunzip -c '${{ env.DEPLOY_PATH }}/releases/rust-pwa-${{ env.IMAGE_TAG }}.tar.gz' | docker load; \
+             docker rm -f '${{ env.CONTAINER_NAME }}' 2>/dev/null || true; \
+             docker run -d --name '${{ env.CONTAINER_NAME }}' --restart unless-stopped \
+               -e VAPID_PUBLIC_KEY='${{ secrets.VAPID_PUBLIC_KEY }}' \
+               -e VAPID_PRIVATE_KEY='${{ secrets.VAPID_PRIVATE_KEY }}' \
+               -e VAPID_SUBJECT='${{ secrets.VAPID_SUBJECT }}' \
+               -p 127.0.0.1:${{ env.HOST_PORT }}:3000 \
+               '${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}'"
