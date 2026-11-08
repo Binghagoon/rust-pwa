@@ -1,4 +1,4 @@
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.89-bookworm AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY static ./static
 
-RUN cargo build --release --locked
+RUN rustc --version \
+	&& cargo --version \
+	&& cargo build --release --locked
 
 FROM alpine:3.22
 
