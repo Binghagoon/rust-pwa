@@ -18,7 +18,9 @@ RUN mkdir src \
 COPY src ./src
 COPY static ./static
 
-RUN cargo build --release --locked
+RUN cargo clean -p rust-pwa \
+	&& cargo build --release --locked \
+	&& test -s target/release/rust-pwa
 
 FROM alpine:3.22
 
