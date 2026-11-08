@@ -8,17 +8,15 @@ RUN apt-get update \
 
 COPY Cargo.toml Cargo.lock ./
 
-RUN mkdir src \
-	&& printf 'fn main() {}\n' > src/main.rs \
-	&& rustc --version \
-	&& cargo --version \
-	&& cargo build --release --locked \
-	&& rm -rf src target/release/rust-pwa target/release/deps/rust_pwa-* target/release/.fingerprint/rust-pwa-*
-
 COPY src ./src
 COPY static ./static
 
-RUN cargo build --release --locked --bin rust-pwa \
+RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/registry \
+	--mount=type=cache,id=rust-pwa-cargo-git,target=/usr/local/cargo/git \
+	--mount=type=cache,id=rust-pwa-target,target=/app/target \
+	rustc --version \
+	&& cargo --version \
+	&& cargo build --release --locked --bin rust-pwa \
 	&& test -s target/release/rust-pwa
 
 FROM alpine:3.22
