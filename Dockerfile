@@ -22,7 +22,7 @@ RUN cargo build --release --locked
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates gcompat libcurl openssl
+RUN apk add --no-cache ca-certificates gcompat libgcc libcurl openssl
 
 WORKDIR /app
 COPY --from=builder --chown=65534:65534 /app/target/release/rust-pwa /app/rust-pwa
