@@ -29,6 +29,25 @@
             ? navigator.serviceWorker.register('/sw.js')
             : null;
 
+        async function saveSubscription(subscription) {
+            const response = await fetch('/api/subscribe', {
+                method: 'POST',
+                body: JSON.stringify(subscription),
+                headers: { 'content-type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`서버 요청 실패 (${response.status})`);
+            }
+        }
+
+        if (serviceWorkerRegistration) {
+            serviceWorkerRegistration
+                .then((registration) => registration.pushManager.getSubscription())
+                .then((subscription) => subscription ? saveSubscription(subscription) : null)
+                .catch((error) => console.error('기존 푸시 구독 동기화 실패:', error));
+        }
+
         async function subscribePush() {
             pushButton.disabled = true;
 
@@ -62,15 +81,7 @@
                     applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
                 });
 
-                const response = await fetch('/api/subscribe', {
-                    method: 'POST',
-                    body: JSON.stringify(subscription),
-                    headers: { 'content-type': 'application/json' }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`서버 요청 실패 (${response.status})`);
-                }
+                await saveSubscription(subscription);
 
                 alert('푸시 알림 구독이 완료되었습니다!');
             } catch (error) {

@@ -101,19 +101,20 @@ async fn subscribers_handler(
 async fn subscribe_handler(
     State(state): State<Arc<AppState>>,
     Json(sub): Json<ClientSubscription>,
-) -> &'static str {
+) -> String {
     println!("\n[📥 SUBSCRIBE] 새로운 푸시 구독 요청이 접수되었습니다.");
     println!("[📌 ENDPOINT] {}", sub.endpoint);
 
     let mut subs = state.subscriptions.lock().unwrap();
+    subs.retain(|existing| existing.endpoint != sub.endpoint);
     subs.push(sub);
     
     println!("[✅ SUCCESS] 현재 총 구독자 수: {}명", subs.len());
-    "Subscribed successfully"
+    "Subscribed successfully".to_string()
 }
 
 // 2. 저장된 구독자들에게 푸시 알림을 발송하는 엔드포인트
-async fn send_notification_handler(State(state): State<Arc<AppState>>) -> &'static str {
+async fn send_notification_handler(State(state): State<Arc<AppState>>) -> String {
     let subs = state.subscriptions.lock().unwrap().clone();
     send_notifications(subs, "서버에서 보낸 실시간 푸시 알림입니다! 🔥").await
 }
@@ -121,7 +122,7 @@ async fn send_notification_handler(State(state): State<Arc<AppState>>) -> &'stat
 async fn notifications_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<NotificationRequest>,
-) -> &'static str {
+) -> String {
     println!("\n[📤 NOTIFY] POST /notifications 요청이 들어왔습니다.");
 
     let subscribers = if request.subscribers.is_empty() {
@@ -133,7 +134,7 @@ async fn notifications_handler(
     send_notifications(subscribers, &request.message).await
 }
 
-async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'static str {
+async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> String {
     println!("\n[📤 NOTIFY] 알림 전송을 시작합니다.");
 
     // 환경 변수에서 VAPID 키 로드
@@ -141,14 +142,14 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'s
         Ok(key) => key,
         Err(_) => {
             eprintln!("[❌ ERROR] VAPID_PUBLIC_KEY 환경 변수가 설정되지 않았습니다!");
-            return "VAPID_PUBLIC_KEY missing";
+            return "VAPID_PUBLIC_KEY missing".to_string();
         }
     };
     let private_key = match std::env::var("VAPID_PRIVATE_KEY") {
         Ok(key) => key,
         Err(_) => {
             eprintln!("[❌ ERROR] VAPID_PRIVATE_KEY 환경 변수가 설정되지 않았습니다!");
-            return "VAPID_PRIVATE_KEY missing";
+            return "VAPID_PRIVATE_KEY missing".to_string();
         }
     };
     let subject = std::env::var("VAPID_SUBJECT").unwrap_or_else(|_| {
@@ -158,7 +159,7 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'s
 
     if subs.is_empty() {
         println!("[ℹ️ INFO] 현재 등록된 구독자가 없습니다. 브라우저에서 먼저 '구독하기'를 눌러주세요.");
-        return "No subscribers found";
+        return "No subscribers found".to_string();
     }
 
     println!("[📊 INFO] 총 {}명의 구독자에게 알림 발송을 시작합니다.", subs.len());
@@ -171,9 +172,11 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'s
         }
         Err(e) => {
             eprintln!("[❌ ERROR] WebPushClient 생성 실패: {:?}", e);
-            return "Failed to create WebPushClient";
+            return "Failed to create WebPushClient".to_string();
         }
     };
+
+    let mut failed = 0;
 
     // 등록된 모든 구독자에게 알림 발송
     for (index, sub) in subs.iter().enumerate() {
@@ -223,10 +226,17 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> &'s
 
         match client.send(message).await {
             Ok(_) => println!("[🎉 SUCCESS] 구독자[{}]에게 푸시 알림 전송 성공!", index + 1),
-            Err(e) => eprintln!("[❌ ERROR] 구독자[{}]에게 푸시 알림 전송 실패: {:?}", index + 1, e),
+            Err(e) => {
+                failed += 1;
+                eprintln!("[❌ ERROR] 구독자[{}]에게 푸시 알림 전송 실패: {:?}", index + 1, e);
+            }
         }
     }
 
     println!("[🏁 FINISH] 모든 알림 전송 시도가 완료되었습니다.\n");
-    "Notification trigger attempted"
+    format!(
+        "Notification trigger attempted: {} succeeded, {} failed",
+        subs.len() - failed,
+        failed
+    )
 }
