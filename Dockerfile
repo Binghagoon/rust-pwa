@@ -32,9 +32,11 @@ RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/regist
     && test -s target/release/rust-pwa
 
 # --- Runtime Stage ---
-FROM alpine:3.22
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates gcompat libgcc libcurl openssl
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libcurl4 libgcc-s1 openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder --chown=65534:65534 /app/target/release/rust-pwa /app/rust-pwa
