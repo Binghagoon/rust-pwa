@@ -28,7 +28,6 @@ COPY static ./static
 # 5. 실제 바이너리 빌드 (소스 코드만 빌드되므로 매우 빠르게 완료됨)
 RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=rust-pwa-cargo-git,target=/usr/local/cargo/git \
-    --mount=type=cache,id=rust-pwa-target,target=/app/target \
     cargo build --release --locked --bin rust-pwa \
     && test -s target/release/rust-pwa
 
