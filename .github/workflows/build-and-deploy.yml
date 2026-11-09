@@ -34,6 +34,22 @@ jobs:
         with:
           driver: docker-container
 
+      - name: Download previous builder image
+        shell: bash
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' '${{ secrets.DEPLOY_SSH_KEY }}' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H '${{ secrets.DEPLOY_HOST }}' >> ~/.ssh/known_hosts
+
+          if scp -P 22 '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/releases/rust-pwa-builder-${{ env.IMAGE_TAG }}.tar.gz' builder-image.tar.gz; then
+            gunzip -c builder-image.tar.gz | docker load
+            echo "BUILDER_BASE_IMAGE=${{ env.BUILDER_IMAGE }}:${{ env.IMAGE_TAG }}" >> "$GITHUB_ENV"
+          else
+            echo "No previous builder image found; using the Rust base image."
+            echo "BUILDER_BASE_IMAGE=rust:1.89-bookworm" >> "$GITHUB_ENV"
+          fi
+
       # 1. [Builder 이미지 빌드 및 로드] 컴파일 레이어 캐시 활용
       - name: Build Builder Stage Image
         uses: docker/build-push-action@v6
@@ -44,6 +60,8 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: ${{ env.BUILDER_IMAGE }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            BUILDER_BASE_IMAGE=${{ env.BUILDER_BASE_IMAGE }}
           cache-from: type=gha,scope=${{ env.BUILDER_IMAGE }}
           cache-to: type=gha,mode=max,scope=${{ env.BUILDER_IMAGE }}
 
@@ -56,6 +74,8 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            BUILDER_BASE_IMAGE=${{ env.BUILDER_BASE_IMAGE }}
           cache-from: |
             type=gha,scope=${{ env.IMAGE_NAME }}
             type=local,src=/tmp/.buildx-cache-builder
@@ -71,7 +91,7 @@ jobs:
           echo "Compressing Builder Image..."
           docker save '${{ env.BUILDER_IMAGE }}:${{ env.IMAGE_TAG }}' | gzip -1 > builder-image.tar.gz
 
-      # 4. [서버 배포] 실제 서비스용 런타임 이미지만 서버로 전송 및 배포
+      # 4. [서버 보관 및 배포] 런타임 이미지와 builder 이미지를 서버에 저장
       - name: Configure SSH and Deploy Runtime Image
         shell: bash
         run: |
@@ -82,8 +102,9 @@ jobs:
 
           ssh '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}' "mkdir -p '${{ env.DEPLOY_PATH }}/releases'"
           
-          # 런타임 이미지만 서버로 업로드
+          # 런타임 이미지와 컴파일용 builder 이미지를 각각 업로드
           scp -P 22 runtime-image.tar.gz '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/releases/rust-pwa-${{ env.IMAGE_TAG }}.tar.gz'
+          scp -P 22 builder-image.tar.gz '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/releases/rust-pwa-builder-${{ env.IMAGE_TAG }}.tar.gz'
 
       - name: Restart application on Server
         shell: bash

@@ -1,4 +1,5 @@
-FROM rust:1.89-bookworm AS builder
+ARG BUILDER_BASE_IMAGE=rust:1.89-bookworm
+FROM ${BUILDER_BASE_IMAGE} AS builder
 
 WORKDIR /app
 
