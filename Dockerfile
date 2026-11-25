@@ -43,6 +43,10 @@ WORKDIR /app
 COPY --from=builder --chown=65534:65534 /app/target/release/rust-pwa /app/rust-pwa
 COPY --from=builder --chown=65534:65534 /app/static /app/static
 
+ENV DEVICE_STORE_PATH=/db/devices.json
+RUN mkdir -p /db && chown 65534:65534 /db
+VOLUME ["/db"]
+
 USER 65534:65534
 EXPOSE 3000
 
