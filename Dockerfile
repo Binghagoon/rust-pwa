@@ -46,7 +46,7 @@ ENV DEVICE_STORE_PATH=/db/devices.json
 RUN mkdir -p /db && chown 65534:65534 /db
 VOLUME ["/db"]
 
-USER 65534:65534
+# USER 65534:65534
 EXPOSE 3000
 
 ENTRYPOINT ["/app/rust-pwa"]
