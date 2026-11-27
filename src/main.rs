@@ -30,8 +30,12 @@ struct SubscriptionKeys {
 
 #[derive(Deserialize)]
 struct NotificationRequest {
+    #[serde(default = "default_notification_title")]
+    title: String,
+    #[serde(default, alias = "message")]
+    body: String,
+    #[serde(default)]
     subscribers: Vec<ClientSubscription>,
-    message: String,
 }
 
 // 서버 상태 (메모리 캐시와 디스크 저장 경로)
@@ -65,6 +69,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = Router::new()
         .nest_service("/", ServeDir::new("static"))
         .route("/api/subscribe", post(subscribe_handler))
+        .route("/api/unsubscribe", post(unsubscribe_handler))
         .route("/api/vapid-public-key", get(vapid_public_key_handler))
         .route("/api/send-notification", get(send_notification_handler))
         .route("/notifications", post(notifications_handler))
@@ -78,13 +83,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         "HTTP request received"
                     );
                 })
-                .on_response(|response: &axum::http::Response<_>, latency, _span: &tracing::Span| {
-                    tracing::info!(
-                        status = %response.status(),
-                        latency = ?latency,
-                        "HTTP response sent"
-                    );
-                }),
+                .on_response(
+                    |response: &axum::http::Response<_>, latency, _span: &tracing::Span| {
+                        tracing::info!(
+                            status = %response.status(),
+                            latency = ?latency,
+                            "HTTP response sent"
+                        );
+                    },
+                ),
         )
         .with_state(state);
 
@@ -160,10 +167,44 @@ async fn subscribe_handler(
     Ok("Subscribed successfully".to_string())
 }
 
+async fn unsubscribe_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<UnsubscribeRequest>,
+) -> Result<String, (StatusCode, String)> {
+    let mut subscriptions = state.subscriptions.lock().await;
+    let mut updated = subscriptions.clone();
+    updated.retain(|subscription| subscription.endpoint != request.endpoint);
+
+    if let Err(error) = save_subscriptions(&state.store_path, &updated).await {
+        tracing::error!(%error, "Failed to persist device unsubscription");
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "기기 구독 해제 정보를 저장하지 못했습니다.".to_string(),
+        ));
+    }
+
+    *subscriptions = updated;
+    Ok("Unsubscribed successfully".to_string())
+}
+
+#[derive(Deserialize)]
+struct UnsubscribeRequest {
+    endpoint: String,
+}
+
+fn default_notification_title() -> String {
+    "Rust 서버 알림".to_string()
+}
+
 // 2. 저장된 구독자들에게 푸시 알림을 발송하는 엔드포인트
 async fn send_notification_handler(State(state): State<Arc<AppState>>) -> String {
     let subs = state.subscriptions.lock().await.clone();
-    send_notifications(subs, "서버에서 보낸 실시간 푸시 알림입니다! 🔥").await
+    send_notifications(
+        subs,
+        "Rust 서버 알림",
+        "서버에서 보낸 실시간 푸시 알림입니다! 🔥",
+    )
+    .await
 }
 
 async fn notifications_handler(
@@ -178,10 +219,10 @@ async fn notifications_handler(
         request.subscribers
     };
 
-    send_notifications(subscribers, &request.message).await
+    send_notifications(subscribers, &request.title, &request.body).await
 }
 
-async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> String {
+async fn send_notifications(subs: Vec<ClientSubscription>, title: &str, body: &str) -> String {
     println!("\n[📤 NOTIFY] 알림 전송을 시작합니다.");
 
     // 환경 변수에서 VAPID 키 로드
@@ -205,11 +246,16 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> Str
     });
 
     if subs.is_empty() {
-        println!("[ℹ️ INFO] 현재 등록된 구독자가 없습니다. 브라우저에서 먼저 '구독하기'를 눌러주세요.");
+        println!(
+            "[ℹ️ INFO] 현재 등록된 구독자가 없습니다. 브라우저에서 먼저 '구독하기'를 눌러주세요."
+        );
         return "No subscribers found".to_string();
     }
 
-    println!("[📊 INFO] 총 {}명의 구독자에게 알림 발송을 시작합니다.", subs.len());
+    println!(
+        "[📊 INFO] 총 {}명의 구독자에게 알림 발송을 시작합니다.",
+        subs.len()
+    );
 
     // WebPushClient 생성
     let client = match IsahcWebPushClient::new() {
@@ -227,13 +273,13 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> Str
 
     // 등록된 모든 구독자에게 알림 발송
     for (index, sub) in subs.iter().enumerate() {
-        println!("\n[🔄 PROCESS] [{}/{}] 구독자 처리 중...", index + 1, subs.len());
-
-        let sub_info = SubscriptionInfo::new(
-            &sub.endpoint,
-            &sub.keys.p256dh,
-            &sub.keys.auth,
+        println!(
+            "\n[🔄 PROCESS] [{}/{}] 구독자 처리 중...",
+            index + 1,
+            subs.len()
         );
+
+        let sub_info = SubscriptionInfo::new(&sub.endpoint, &sub.keys.p256dh, &sub.keys.auth);
 
         let mut sig_builder = match VapidSignatureBuilder::from_base64(&private_key, &sub_info) {
             Ok(builder) => builder,
@@ -242,7 +288,7 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> Str
                 continue;
             }
         };
-        
+
         let _ = sig_builder.add_claim("sub", subject.clone());
         let vapid_keys = match sig_builder.build() {
             Ok(keys) => keys,
@@ -256,9 +302,10 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> Str
 
         // 보낼 알림 내용 (JSON 페이로드)
         let payload = serde_json::json!({
-            "title": "Rust 서버 알림",
-            "body": message
-        }).to_string();
+            "title": title,
+            "body": body
+        })
+        .to_string();
 
         builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
         builder.set_vapid_signature(vapid_keys);
@@ -272,10 +319,17 @@ async fn send_notifications(subs: Vec<ClientSubscription>, message: &str) -> Str
         };
 
         match client.send(message).await {
-            Ok(_) => println!("[🎉 SUCCESS] 구독자[{}]에게 푸시 알림 전송 성공!", index + 1),
+            Ok(_) => println!(
+                "[🎉 SUCCESS] 구독자[{}]에게 푸시 알림 전송 성공!",
+                index + 1
+            ),
             Err(e) => {
                 failed += 1;
-                eprintln!("[❌ ERROR] 구독자[{}]에게 푸시 알림 전송 실패: {:?}", index + 1, e);
+                eprintln!(
+                    "[❌ ERROR] 구독자[{}]에게 푸시 알림 전송 실패: {:?}",
+                    index + 1,
+                    e
+                );
             }
         }
     }

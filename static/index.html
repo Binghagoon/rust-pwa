@@ -11,6 +11,8 @@
 <body>
     <h1>Rust PWA 푸시 알림 🚀</h1>
     <button id="push-btn" type="button">푸시 알림 구독하기</button>
+    <button id="unsubscribe-btn" type="button" disabled>푸시 알림 구독 해제</button>
+    <p id="push-status" aria-live="polite"></p>
     <p><a href="/admin.html">등록 기기 관리</a></p>
 
     <script>
@@ -26,9 +28,35 @@
         }
 
         const pushButton = document.getElementById('push-btn');
+        const unsubscribeButton = document.getElementById('unsubscribe-btn');
+        const pushStatus = document.getElementById('push-status');
         const serviceWorkerRegistration = 'serviceWorker' in navigator
             ? navigator.serviceWorker.register('/sw.js')
             : null;
+
+        function updateSubscriptionControls(isSubscribed) {
+            pushButton.disabled = isSubscribed;
+            unsubscribeButton.disabled = !isSubscribed;
+            pushStatus.textContent = isSubscribed ? '푸시 알림을 구독 중입니다.' : '푸시 알림을 구독하지 않았습니다.';
+        }
+
+        async function refreshSubscriptionControls() {
+            if (!serviceWorkerRegistration) {
+                updateSubscriptionControls(false);
+                return;
+            }
+
+            try {
+                const registration = await serviceWorkerRegistration;
+                const subscription = await registration.pushManager.getSubscription();
+                updateSubscriptionControls(Boolean(subscription));
+            } catch (error) {
+                console.error('푸시 구독 상태 확인 실패:', error);
+                pushButton.disabled = false;
+                unsubscribeButton.disabled = true;
+                pushStatus.textContent = '푸시 구독 상태를 확인하지 못했습니다.';
+            }
+        }
 
         async function saveSubscription(subscription) {
             const response = await fetch('/api/subscribe', {
@@ -42,11 +70,30 @@
             }
         }
 
+        async function removeSubscription(endpoint) {
+            const response = await fetch('/api/unsubscribe', {
+                method: 'POST',
+                body: JSON.stringify({ endpoint }),
+                headers: { 'content-type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`서버 요청 실패 (${response.status})`);
+            }
+        }
+
         if (serviceWorkerRegistration) {
             serviceWorkerRegistration
-                .then((registration) => registration.pushManager.getSubscription())
-                .then((subscription) => subscription ? saveSubscription(subscription) : null)
+                .then(async (registration) => {
+                    const subscription = await registration.pushManager.getSubscription();
+                    updateSubscriptionControls(Boolean(subscription));
+                    if (subscription) {
+                        await saveSubscription(subscription);
+                    }
+                })
                 .catch((error) => console.error('기존 푸시 구독 동기화 실패:', error));
+        } else {
+            updateSubscriptionControls(false);
         }
 
         async function subscribePush() {
@@ -74,7 +121,9 @@
 
                 const existingSubscription = await registration.pushManager.getSubscription();
                 if (existingSubscription) {
-                    await existingSubscription.unsubscribe();
+                    await saveSubscription(existingSubscription);
+                    updateSubscriptionControls(true);
+                    return;
                 }
 
                 const subscription = await registration.pushManager.subscribe({
@@ -84,16 +133,49 @@
 
                 await saveSubscription(subscription);
 
+                updateSubscriptionControls(true);
                 alert('푸시 알림 구독이 완료되었습니다!');
             } catch (error) {
                 console.error('푸시 구독 실패:', error);
                 alert(`푸시 구독에 실패했습니다: ${error.message}`);
             } finally {
-                pushButton.disabled = false;
+                await refreshSubscriptionControls();
+            }
+        }
+
+        async function unsubscribePush() {
+            unsubscribeButton.disabled = true;
+
+            try {
+                if (!serviceWorkerRegistration) {
+                    throw new Error('이 브라우저에서는 푸시 알림을 사용할 수 없습니다.');
+                }
+
+                const registration = await serviceWorkerRegistration;
+                const subscription = await registration.pushManager.getSubscription();
+                if (!subscription) {
+                    updateSubscriptionControls(false);
+                    return;
+                }
+
+                await removeSubscription(subscription.endpoint);
+                const unsubscribed = await subscription.unsubscribe();
+                if (!unsubscribed) {
+                    throw new Error('브라우저 푸시 구독을 해제하지 못했습니다.');
+                }
+
+                updateSubscriptionControls(false);
+                alert('푸시 알림 구독을 해제했습니다.');
+            } catch (error) {
+                console.error('푸시 구독 해제 실패:', error);
+                alert(`푸시 구독 해제에 실패했습니다: ${error.message}`);
+            } finally {
+                await refreshSubscriptionControls();
             }
         }
 
         pushButton.addEventListener('click', subscribePush);
+        unsubscribeButton.addEventListener('click', unsubscribePush);
     </script>
 </body>
 

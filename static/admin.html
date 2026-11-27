@@ -231,6 +231,79 @@
             line-height: 1.6;
         }
 
+        .notification-form {
+            display: grid;
+            gap: 14px;
+            padding: 22px 24px;
+        }
+
+        .notification-form label {
+            display: grid;
+            gap: 7px;
+            color: #35415a;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .notification-form input,
+        .notification-form textarea {
+            width: 100%;
+            padding: 11px 12px;
+            border: 1px solid #dfe4ef;
+            border-radius: 9px;
+            color: #263149;
+            font: inherit;
+            font-size: 14px;
+        }
+
+        .notification-form textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .notification-form input:focus,
+        .notification-form textarea:focus {
+            outline: 2px solid #b8c5f5;
+            outline-offset: 1px;
+        }
+
+        .notification-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .send-button {
+            min-height: 40px;
+            padding: 0 16px;
+            border: 0;
+            border-radius: 9px;
+            background: #3156d3;
+            color: #fff;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: #2648bc;
+        }
+
+        .send-button:disabled {
+            cursor: wait;
+            opacity: .6;
+        }
+
+        .send-status {
+            color: #6b7487;
+            font-size: 13px;
+        }
+
+        .send-status.error {
+            color: #b53c49;
+        }
+
         @media (max-width: 600px) {
             .shell {
                 width: min(100% - 32px, 1040px);
@@ -301,6 +374,25 @@
                 <div class="message">등록된 기기를 불러오는 중입니다.</div>
             </div>
         </section>
+        <section class="panel" aria-labelledby="notification-title">
+            <header class="panel-heading">
+                <h2 id="notification-title">알림 보내기</h2>
+            </header>
+            <form class="notification-form" id="notification-form">
+                <label for="notification-heading">
+                    제목
+                    <input id="notification-heading" name="title" type="text" maxlength="120" required>
+                </label>
+                <label for="notification-body">
+                    내용
+                    <textarea id="notification-body" name="body" maxlength="2000" required></textarea>
+                </label>
+                <div class="notification-actions">
+                    <button class="send-button" id="send-button" type="submit">전체 구독자에게 보내기</button>
+                    <span class="send-status" id="send-status" role="status" aria-live="polite"></span>
+                </div>
+            </form>
+        </section>
         <p class="note">브라우저/기기 이름은 수집하지 않아 푸시 서비스 제공자만 표시합니다. 등록 정보는 서버의 JSON 저장소에 보관되며, Docker에서는 /db/devices.json을 사용합니다.</p>
     </main>
 
@@ -308,6 +400,9 @@
         const deviceCount = document.getElementById('device-count');
         const deviceList = document.getElementById('device-list');
         const refreshButton = document.getElementById('refresh-button');
+        const notificationForm = document.getElementById('notification-form');
+        const sendButton = document.getElementById('send-button');
+        const sendStatus = document.getElementById('send-status');
 
         function showMessage(message, isError) {
             deviceList.replaceChildren();
@@ -394,6 +489,34 @@
         }
 
         refreshButton.addEventListener('click', loadDevices);
+        notificationForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            sendButton.disabled = true;
+            sendStatus.className = 'send-status';
+            sendStatus.textContent = '알림을 전송하고 있습니다.';
+
+            try {
+                const formData = new FormData(notificationForm);
+                const response = await fetch('/notifications', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json', accept: 'text/plain' },
+                    body: JSON.stringify({
+                        subscribers: [],
+                        title: formData.get('title'),
+                        body: formData.get('body')
+                    })
+                });
+                if (!response.ok) {
+                    throw new Error(`서버 요청 실패 (${response.status})`);
+                }
+                sendStatus.textContent = await response.text();
+            } catch (error) {
+                sendStatus.className = 'send-status error';
+                sendStatus.textContent = `알림 전송에 실패했습니다. ${error.message}`;
+            } finally {
+                sendButton.disabled = false;
+            }
+        });
         loadDevices();
     </script>
 </body>
