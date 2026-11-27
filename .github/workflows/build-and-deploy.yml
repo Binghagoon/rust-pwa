@@ -28,6 +28,25 @@ jobs:
         with:
           driver: docker-container
 
+      - name: Prepare local BuildKit cache
+        id: local-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_dir="${RUNNER_TEMP}/docker-layer-cache-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cache_archive="${HOME}/.cached/docker-layer.tgz"
+          mkdir -p "${HOME}/.cached" "$cache_dir"
+
+          if [ -f "$cache_archive" ]; then
+            tar -xzf "$cache_archive" -C "$cache_dir"
+            cache_from="type=local,src=$cache_dir"
+          else
+            cache_from="type=gha,scope=${IMAGE_NAME}"
+          fi
+
+          echo "cache_dir=$cache_dir" >> "$GITHUB_OUTPUT"
+          echo "cache_from=$cache_from" >> "$GITHUB_OUTPUT"
+
       # 최종 빌드의 mode=max 캐시에는 builder 스테이지도 포함됨
       - name: Build Final Runtime Image
         uses: docker/build-push-action@v6
@@ -37,8 +56,21 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}
-          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}
+          cache-from: ${{ steps.local-cache.outputs.cache_from }}
+          cache-to: type=local,dest=${{ steps.local-cache.outputs.cache_dir }},mode=max
+
+      - name: Save local BuildKit cache archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_dir="${{ steps.local-cache.outputs.cache_dir }}"
+          cache_archive="${HOME}/.cached/docker-layer.tgz"
+          temp_archive="${cache_archive}.${GITHUB_RUN_ID}.tmp"
+          trap 'rm -f "$temp_archive"' EXIT
+
+          tar -cf - -C "$cache_dir" . | gzip -1 > "$temp_archive"
+          mv "$temp_archive" "$cache_archive"
+          trap - EXIT
 
       # 2. 런타임 이미지를 압축해 서버 배포용으로 저장
       - name: Export and Compress Runtime Image

@@ -16,10 +16,9 @@ RUN mkdir -p src static \
     && echo "fn main() {}" > src/main.rs \
     && touch static/.keep
 
-# 3. 캐시 마운트를 활용해 의존성 미리 빌드 (소스 변경 시 이 단계는 스킵됨)
+# 3. 의존성 빌드 결과를 레이어에 남겨 소스 변경 시 재사용
 RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=rust-pwa-cargo-git,target=/usr/local/cargo/git \
-    --mount=type=cache,id=rust-pwa-target,target=/app/target \
     cargo build --release --locked --bin rust-pwa
 
 # 4. 실제 소스 코드 및 정적 파일 복사
