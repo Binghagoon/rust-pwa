@@ -1,6 +1,6 @@
 use crate::{
     notifications::{notifications_handler, send_notification_handler},
-    state::AppState,
+    state::{AdminCredentials, AppState},
     subscriptions::{
         delete_subscriber_handler, rename_subscriber_handler, subscribe_handler,
         subscribers_handler, unsubscribe_handler, vapid_public_key_handler,
