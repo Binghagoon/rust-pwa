@@ -8,6 +8,12 @@ use tokio::sync::Mutex;
 pub(crate) struct AppState {
     pub(crate) subscriptions: Mutex<Vec<ClientSubscription>>,
     pub(crate) store_path: PathBuf,
+    pub(crate) admin_credentials: Option<AdminCredentials>,
+}
+
+pub(crate) struct AdminCredentials {
+    pub(crate) username: String,
+    pub(crate) password: String,
 }
 
 pub(crate) async fn load_subscriptions(

@@ -4,7 +4,7 @@ mod server;
 mod state;
 mod subscriptions;
 
-use state::{load_subscriptions, AppState};
+use state::{load_subscriptions, AdminCredentials, AppState};
 use std::{error::Error, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -22,9 +22,26 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("db/devices.json"));
     let subscriptions = load_subscriptions(&store_path).await?;
+    let admin_credentials = match (
+        std::env::var("ADMIN_USERNAME"),
+        std::env::var("ADMIN_PASSWORD"),
+    ) {
+        (Ok(username), Ok(password))
+            if !username.is_empty() && !username.contains(':') && !password.is_empty() =>
+        {
+            Some(AdminCredentials { username, password })
+        }
+        _ => {
+            tracing::warn!(
+                "Admin routes are disabled until ADMIN_USERNAME and ADMIN_PASSWORD are set (username must not contain ':')"
+            );
+            None
+        }
+    };
     let state = Arc::new(AppState {
         subscriptions: Mutex::new(subscriptions),
         store_path,
+        admin_credentials,
     });
     let app = server::router(state);
 

@@ -78,7 +78,16 @@ jobs:
 
       - name: Restart application on Server
         shell: bash
+        env:
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: |
+          if [[ -z "$ADMIN_USERNAME" || -z "$ADMIN_PASSWORD" || "$ADMIN_USERNAME" == *:* ]]; then
+            echo "::error::Set non-empty ADMIN_USERNAME and ADMIN_PASSWORD secrets; username must not contain a colon."
+            exit 1
+          fi
+          admin_username_arg=$(printf '%q' "$ADMIN_USERNAME")
+          admin_password_arg=$(printf '%q' "$ADMIN_PASSWORD")
           ssh '${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}' \
             "set -e; \
              gunzip -c '${{ env.DEPLOY_PATH }}/releases/rust-pwa-${{ env.IMAGE_TAG }}.tar.gz' | docker load; \
@@ -89,5 +98,7 @@ jobs:
                -e VAPID_PUBLIC_KEY='${{ secrets.VAPID_PUBLIC_KEY }}' \
                -e VAPID_PRIVATE_KEY='${{ secrets.VAPID_PRIVATE_KEY }}' \
                -e VAPID_SUBJECT='${{ secrets.VAPID_SUBJECT }}' \
+               -e ADMIN_USERNAME=${admin_username_arg} \
+               -e ADMIN_PASSWORD=${admin_password_arg} \
                -p 127.0.0.1:${{ env.HOST_PORT }}:3000 \
                '${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}'"
