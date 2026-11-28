@@ -25,6 +25,9 @@ RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/regist
 COPY src ./src
 COPY static ./static
 
+# 실제 소스가 스텁보다 오래된 mtime을 가져 Cargo가 빌드를 건너뛰지 않도록 갱신
+RUN touch src/main.rs
+
 # 5. 실제 바이너리 빌드 (소스 코드만 빌드되므로 매우 빠르게 완료됨)
 RUN --mount=type=cache,id=rust-pwa-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=rust-pwa-cargo-git,target=/usr/local/cargo/git \
