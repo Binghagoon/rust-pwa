@@ -89,11 +89,8 @@
                 .then(async (registration) => {
                     const subscription = await registration.pushManager.getSubscription();
                     updateSubscriptionControls(Boolean(subscription));
-                    if (subscription) {
-                        await saveSubscription(subscription);
-                    }
                 })
-                .catch((error) => console.error('기존 푸시 구독 동기화 실패:', error));
+                .catch((error) => console.error('기존 푸시 구독 상태 확인 실패:', error));
         } else {
             updateSubscriptionControls(false);
         }
